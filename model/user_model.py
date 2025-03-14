@@ -9,6 +9,8 @@ import mysql.connector
 from flask import request
 from utils.auth import token_required, generate_token
 
+
+
 class user_model():
     
     def __init__(self):
@@ -37,6 +39,27 @@ class user_model():
             }
             return json.dumps(response, ensure_ascii=False), 404  # Mã HTTP 404 Not Found
 
+    def user_getinfo_model(self, user_id):
+        self.cur = self.con.cursor(dictionary=True)  # Tạo cursor mới để tránh cache
+        self.cur.execute("SELECT * FROM nguoidung WHERE MaNguoiDung = %s", (user_id,))
+        rs = self.cur.fetchone()
+        self.cur.close()  # Đóng cursor sau khi truy vấn
+
+        if rs:  # Nếu tìm thấy user
+            response = {
+                "status": "success",
+                "message": "Lấy thông tin người dùng thành công.",
+                "data": rs
+            }
+            return json.dumps(response, ensure_ascii=False), 200  # Mã HTTP 200 OK
+        else:
+            response = {
+                "status": "error",
+                "message": "Không tìm thấy thông tin người dùng.",
+                "data": None
+            }
+            return json.dumps(response, ensure_ascii=False), 404  # Mã HTTP 404 Not Found
+
     @token_required   
     def user_addone_model(self, data):
         try:
@@ -48,7 +71,7 @@ class user_model():
             
             # Câu lệnh SQL sử dụng parameterized query để tránh SQL Injection
             sql = """
-            INSERT INTO quanlydangvien.nguoidung (TenNguoiDung, MatKhauDung, VaiTro, TrangThai, TenDangNhap) 
+            INSERT INTO nguoidung (TenNguoiDung, MatKhauDung, VaiTro, TrangThai, TenDangNhap) 
             VALUES (%s, %s, %s, %s, %s)
             """
             values = (data['TenNguoiDung'], hashed_password.decode('utf-8'), data['VaiTro'], data['TrangThai'], data['TenDangNhap'])
@@ -103,6 +126,8 @@ class user_model():
             self.cur.execute("SELECT VaiTro FROM nguoidung WHERE MaNguoiDung = %s", (user_id,))
             user = self.cur.fetchone()
 
+            print("TenNguoiDung",data.get("TenNguoiDung",))
+
 
             if not user or user["VaiTro"] != 1:
                 return json.dumps({"status": "error", "message": "Bạn không có quyền cập nhật người dùng!"}, ensure_ascii=False), 403
@@ -113,14 +138,18 @@ class user_model():
             SET TenNguoiDung = %s, MatKhauDung = %s, VaiTro = %s, TrangThai = %s 
             WHERE MaNguoiDung = %s
             """
-            values = (data["TenNguoiDung"], data["MatKhauDung"], data["VaiTro"], data["TrangThai"], data["MaNguoiDung"])
+
+             # Băm mật khẩu với bcrypt
+            hashed_password = bcrypt.hashpw(data['MatKhauDung'].encode('utf-8'), bcrypt.gensalt())
+
+            values = (data.get("TenNguoiDung",), hashed_password.decode('utf-8'), data.get("VaiTro",), data.get("TrangThai",), user_id)
 
             self.cur.execute(sql, values)
             self.con.commit()  # Xác nhận thay đổi
 
             # 🔹 **4. Kiểm tra số dòng bị ảnh hưởng**
             if self.cur.rowcount > 0:
-                return json.dumps({"status": "success", "message": "Cập nhật thành công!", "updated_id": data["MaNguoiDung"]}, ensure_ascii=False), 200
+                return json.dumps({"status": "success", "message": "Cập nhật thành công!", "updated_id": user_id}, ensure_ascii=False), 200
             else:
                 return json.dumps({"status": "error", "message": "Không có thay đổi nào."}, ensure_ascii=False), 400
 
@@ -177,15 +206,15 @@ class user_model():
             self.cur = self.con.cursor(dictionary=True)  # Tạo cursor mới tránh cache
 
             # 🔹 **1. Truy vấn lấy thông tin người dùng theo TenDangNhap**
-            sql = "SELECT * FROM quanlydangvien.nguoidung WHERE TenDangNhap = %s"
-            self.cur.execute(sql, (data['TenDangNhap'],))
+            sql = "SELECT * FROM nguoidung WHERE TenDangNhap = %s"
+            self.cur.execute(sql, (data.get("TenDangNhap",),))
             user = self.cur.fetchone()
 
             if not user:
                 return json.dumps({"status": "error", "message": "Tên đăng nhập không tồn tại"}, ensure_ascii=False), 404
 
             # 🔹 **2. Kiểm tra mật khẩu với bcrypt**
-            if bcrypt.checkpw(data['MatKhauDung'].encode('utf-8'), user['MatKhauDung'].encode('utf-8')):
+            if bcrypt.checkpw(data.get("MatKhauDung", "Unknown").encode('utf-8'), user['MatKhauDung'].encode('utf-8')):
                 
                 # ✅ **Tạo JWT Token bằng hàm `generate_token`**
                 token = generate_token(user["MaNguoiDung"], user["TenDangNhap"], user["VaiTro"])
@@ -212,3 +241,4 @@ class user_model():
 
         finally:
             self.cur.close()  # Đóng cursor
+

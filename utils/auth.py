@@ -33,15 +33,23 @@ def decode_token(token):
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
+        # Lấy Authorization header
         auth_header = request.headers.get("Authorization")
         if not auth_header or not auth_header.startswith("Bearer "):
             return jsonify({"status": "error", "message": "Token không hợp lệ!"}), 401
         
         token = auth_header.split(" ")[1]
         try:
+            # Giải mã token với SECRET_KEY
             decoded_token = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-            request.user_id = decoded_token.get("MaNguoiDung")  # Đảm bảo đúng key trong token
+            
+            # Lấy user_id và VaiTro từ decoded_token
+            request.user_id = decoded_token.get("MaNguoiDung")  # Lấy MaNguoiDung từ token (đảm bảo đúng key trong token)
+            request.vaitro = decoded_token.get("VaiTro")  # Lấy VaiTro từ token (đảm bảo đúng key trong token)
+
             print("User ID trong middleware:", request.user_id)  # Debug
+            print("Vai trò trong middleware:", request.vaitro)  # Debug
+
         except jwt.ExpiredSignatureError:
             return jsonify({"status": "error", "message": "Token đã hết hạn!"}), 401
         except jwt.InvalidTokenError:
@@ -50,4 +58,3 @@ def token_required(f):
         return f(*args, **kwargs)
 
     return decorated
-

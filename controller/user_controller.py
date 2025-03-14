@@ -1,6 +1,8 @@
 from app import app
 from model.user_model import user_model
 from flask import request
+
+from utils.auth import token_required
 obj = user_model()
 
 @app.route("/user/getall")
@@ -12,8 +14,9 @@ def user_addone_controller():
     return obj.user_addone_model(request.form)
 
 @app.route("/user/update", methods = ["PUT"])
-def user_update_controller():
-    return obj.user_update_model(request.form)
+def user_update_controller():   
+    data = request.get_json()
+    return obj.user_update_model(data)
 
 @app.route("/user/delete/<id>", methods = ["DELETE"])
 def user_delete_controller(id):
@@ -21,4 +24,11 @@ def user_delete_controller(id):
 
 @app.route("/user/login", methods = ["POST"])
 def user_login_controller():
-    return obj.user_login_model(request.form)
+    data = request.get_json()
+    return obj.user_login_model(data)
+
+@app.route("/user/getinfo/<int:id>", methods=["GET"])
+@token_required
+def user_getinfo_controller(id):
+    return obj.user_getinfo_model(id)
+
