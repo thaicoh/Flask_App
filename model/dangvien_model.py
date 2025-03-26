@@ -13,9 +13,9 @@ import datetime
 
 required_fields_add = [
         "SoTheDangVien", "HoVaTenKhaisinh", "GioiTinh", "QueQuan", 
-        "DanToc", "NgayVaoDang", "NgaySinh",
+        "NgayVaoDang", "NgaySinh",
         "NgayVaoDangChinhThuc", 
-         "LyLuanChinhTri", "HocHam", "MaChucVu", "MaChiBo", 
+        "LyLuanChinhTri", "MaChucVu", "MaChiBo", 
         "NgayBatDau"
     ]
 
@@ -544,3 +544,72 @@ class dangvien_model:
 
         finally:
             self.cur.close()  # Đóng cursor
+
+
+    @token_required
+    def dangvien_delete_by_date(self, ngay_xoa):
+        try:
+            self.cur = self.con.cursor(dictionary=True)
+
+            # 🔹 **1. Kiểm tra quyền người dùng**
+            user_id = request.user_id
+            self.cur.execute("SELECT VaiTro FROM nguoidung WHERE MaNguoiDung = %s", (user_id,))
+            user = self.cur.fetchone()
+
+            if not user or user["VaiTro"] != 1:
+                return json.dumps({"status": "error", "message": "Bạn không có quyền xóa đảng viên!"}, ensure_ascii=False), 403
+
+            print(f"🔍 Ngày cần xóa: {ngay_xoa}")
+
+            # 🔹 **2. Tìm danh sách đảng viên cần xóa**
+            sql_find_dangvien = """
+            SELECT SoTheDangVien FROM quanlydangvien.lichsucongtac 
+            WHERE NgayBatDau = %s AND NgayKetThuc IS NULL AND LyDo = %s
+            """
+
+            ly_do = f"Thêm mới từ file excel ngày {ngay_xoa}"  # Format lý do
+
+            self.cur.execute(sql_find_dangvien, (ngay_xoa, ly_do))
+            danh_sach_dangvien = self.cur.fetchall()
+
+            if not danh_sach_dangvien:
+                return json.dumps({"status": "error", "message": "Không có đảng viên nào cần xóa theo ngày này."}, ensure_ascii=False), 404
+
+            ds_so_the = [dv["SoTheDangVien"] for dv in danh_sach_dangvien]
+            print(f"📌 Danh sách đảng viên cần xóa: {ds_so_the}")
+
+            # 🔹 **3. Xóa lịch sử công tác trước**
+            sql_delete_lichsu = f"""
+            DELETE FROM quanlydangvien.lichsucongtac 
+            WHERE SoTheDangVien IN ({','.join(['%s'] * len(ds_so_the))})
+            """
+            self.cur.execute(sql_delete_lichsu, tuple(ds_so_the))
+            print(f"🗑 Đã xóa {self.cur.rowcount} bản ghi trong lichsucongtac.")
+
+            # 🔹 **4. Sau khi xóa lịch sử công tác, mới xóa đảng viên**
+            sql_delete_dangvien = f"""
+            DELETE FROM quanlydangvien.dangvien 
+            WHERE SoTheDangVien IN ({','.join(['%s'] * len(ds_so_the))})
+            """
+            self.cur.execute(sql_delete_dangvien, tuple(ds_so_the))
+            print(f"🗑 Đã xóa {self.cur.rowcount} bản ghi trong dangvien.")
+
+            if self.cur.rowcount > 0:
+                self.con.commit()
+                return json.dumps({"status": "success", "message": f"Xóa {len(ds_so_the)} đảng viên thành công!", "deleted_ids": ds_so_the}, ensure_ascii=False), 200
+            else:
+                self.con.rollback()
+                return json.dumps({"status": "error", "message": "Không thể xóa đảng viên."}, ensure_ascii=False), 500
+
+        except mysql.connector.Error as err:
+            self.con.rollback()
+            return json.dumps({"status": "error", "message": f"Lỗi cơ sở dữ liệu: {str(err)}"}, ensure_ascii=False), 500
+
+        except Exception as e:
+            self.con.rollback()
+            return json.dumps({"status": "error", "message": f"Lỗi không xác định: {str(e)}"}, ensure_ascii=False), 400
+
+        finally:
+            self.cur.close()
+
+

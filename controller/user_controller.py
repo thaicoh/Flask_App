@@ -11,12 +11,14 @@ def user_getall_controller():
 
 @app.route("/user/addone", methods = ["POST"])
 def user_addone_controller():
-    return obj.user_addone_model(request.form)
-
-@app.route("/user/update", methods = ["PUT"])
-def user_update_controller():   
     data = request.get_json()
-    return obj.user_update_model(data)
+
+    return obj.user_addone_model(data)
+
+@app.route("/user/update/<userId>", methods = ["PUT"])
+def user_update_controller(userId):   
+    data = request.get_json()
+    return obj.user_update_model(data, userId)
 
 @app.route("/user/delete/<id>", methods = ["DELETE"])
 def user_delete_controller(id):

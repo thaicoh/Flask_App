@@ -6,7 +6,7 @@ import os
 import datetime
 import jwt
 import mysql.connector
-from flask import request
+from flask import jsonify, request
 from utils.auth import token_required, generate_token
 
 
@@ -60,21 +60,28 @@ class user_model():
             }
             return json.dumps(response, ensure_ascii=False), 404  # Mã HTTP 404 Not Found
 
-    @token_required   
+    @token_required
     def user_addone_model(self, data):
         try:
             self.cur = self.con.cursor(dictionary=True)  # Tạo cursor mới
 
-             # Băm mật khẩu với bcrypt
-            hashed_password = bcrypt.hashpw(data['MatKhauDung'].encode('utf-8'), bcrypt.gensalt())
-
+            # Kiểm tra nếu TenDangNhap đã tồn tại
+            check_sql = "SELECT COUNT(*) AS count FROM nguoidung WHERE TenDangNhap = %s"
+            self.cur.execute(check_sql, (data["TenDangNhap"],))
+            result = self.cur.fetchone()
             
+            if result["count"] > 0:
+                return json.dumps({"status": "error", "message": "Tên đăng nhập đã tồn tại!"}, ensure_ascii=False), 409  # HTTP 409: Conflict
+
+            # Băm mật khẩu với bcrypt
+            hashed_password = bcrypt.hashpw(data["MatKhauDung"].encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
             # Câu lệnh SQL sử dụng parameterized query để tránh SQL Injection
             sql = """
-            INSERT INTO nguoidung (TenNguoiDung, MatKhauDung, VaiTro, TrangThai, TenDangNhap) 
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO nguoidung (TenNguoiDung, MatKhauDung, VaiTro, TrangThai, TenDangNhap, MatKhauGoc) 
+            VALUES (%s, %s, %s, %s, %s, %s)
             """
-            values = (data['TenNguoiDung'], hashed_password.decode('utf-8'), data['VaiTro'], data['TrangThai'], data['TenDangNhap'])
+            values = (data["TenNguoiDung"], hashed_password, data["VaiTro"], data["TrangThai"], data["TenDangNhap"], data["MatKhauDung"])
 
             self.cur.execute(sql, values)  # Thực thi SQL an toàn
             self.con.commit()  # Xác nhận giao dịch
@@ -84,84 +91,82 @@ class user_model():
                 "status": "success",
                 "message": "User created successfully",
                 "user": {
-                    "TenNguoiDung": data['TenNguoiDung'],
-                    "VaiTro": data['VaiTro'],
-                    "TrangThai": data['TrangThai'],
-                    "TenDangNhap": data['TenDangNhap']
+                    "TenNguoiDung": data["TenNguoiDung"],
+                    "VaiTro": data["VaiTro"],
+                    "TrangThai": data["TrangThai"],
+                    "TenDangNhap": data["TenDangNhap"]
                 }
             }
             return json.dumps(response, ensure_ascii=False), 201  # HTTP 201: Created
 
         except mysql.connector.Error as err:
             self.con.rollback()  # Hoàn tác nếu có lỗi
-            response = {
-                "status": "error",
-                "message": f"Database error: {str(err)}"
-            }
+            response = {"status": "error", "message": f"Database error: {str(err)}"}
             return json.dumps(response, ensure_ascii=False), 500  # HTTP 500: Internal Server Error
 
         except Exception as e:
-            response = {
-                "status": "error",
-                "message": f"Unexpected error: {str(e)}"
-            }
+            response = {"status": "error", "message": f"Unexpected error: {str(e)}"}
             return json.dumps(response, ensure_ascii=False), 400  # HTTP 400: Bad Request
 
         finally:
-            self.cur.close()  # Đóng cursor
+            if hasattr(self, "cur"):  # Kiểm tra nếu cursor đã được tạo trước khi đóng
+                self.cur.close()
+
 
       # Import middleware kiểm tra token
 
-    @token_required  
-    def user_update_model(self, data):
+    @token_required
+    def user_update_model(self, data, user_id):
         try:
-            self.cur = self.con.cursor(dictionary=True)  # Tạo cursor mới tránh cache
+            db = Database()
+            self.con, self.cur = db.get_connection() 
 
-            # 🔹 **1. Lấy user_id từ request (middleware đã kiểm tra token)**
-            # Lấy user_id từ token
-            user_id = request.user_id
-            print("User ID từ token:", user_id)  # Debug xem user_id có đúng không
+            #self.cur = self.con.cursor(dictionary=True)
 
-            # 🔹 **2. Kiểm tra quyền (chỉ admin - vai trò 1 - mới được cập nhật)**
-            self.cur.execute("SELECT VaiTro FROM nguoidung WHERE MaNguoiDung = %s", (user_id,))
+            # Kiểm tra người dùng có tồn tại không
+            self.cur.execute("SELECT * FROM nguoidung WHERE MaNguoiDung = %s", (user_id,))
             user = self.cur.fetchone()
+            if not user:
+                return jsonify({"status": "error", "message": "Người dùng không tồn tại!"}), 404
 
-            print("TenNguoiDung",data.get("TenNguoiDung",))
-
-
-            if not user or user["VaiTro"] != 1:
-                return json.dumps({"status": "error", "message": "Bạn không có quyền cập nhật người dùng!"}, ensure_ascii=False), 403
-
-            # 🔹 **3. Cập nhật thông tin người dùng**
+            # Cập nhật thông tin người dùng
             sql = """
-            UPDATE quanlydangvien.nguoidung 
-            SET TenNguoiDung = %s, MatKhauDung = %s, VaiTro = %s, TrangThai = %s 
+            UPDATE nguoidung 
+            SET TenNguoiDung = %s, VaiTro = %s, TrangThai = %s, TenDangNhap = %s
             WHERE MaNguoiDung = %s
             """
-
-             # Băm mật khẩu với bcrypt
-            hashed_password = bcrypt.hashpw(data['MatKhauDung'].encode('utf-8'), bcrypt.gensalt())
-
-            values = (data.get("TenNguoiDung",), hashed_password.decode('utf-8'), data.get("VaiTro",), data.get("TrangThai",), user_id)
+            values = (data['TenNguoiDung'], data['VaiTro'], data['TrangThai'], data['TenDangNhap'], user_id)
 
             self.cur.execute(sql, values)
-            self.con.commit()  # Xác nhận thay đổi
 
-            # 🔹 **4. Kiểm tra số dòng bị ảnh hưởng**
-            if self.cur.rowcount > 0:
-                return json.dumps({"status": "success", "message": "Cập nhật thành công!", "updated_id": user_id}, ensure_ascii=False), 200
-            else:
-                return json.dumps({"status": "error", "message": "Không có thay đổi nào."}, ensure_ascii=False), 400
+            # Nếu có cập nhật mật khẩu mới
+            if 'MatKhauDung' in data and data['MatKhauDung'].strip():
+                hashed_password = bcrypt.hashpw(data['MatKhauDung'].encode('utf-8'), bcrypt.gensalt())
+                self.cur.execute("UPDATE nguoidung SET MatKhauDung = %s, MatKhauGoc = %s WHERE MaNguoiDung = %s",
+                                (hashed_password.decode('utf-8'), data['MatKhauDung'], user_id))
+
+            self.con.commit()
+
+            # Lấy lại thông tin người dùng sau khi cập nhật
+            self.cur.execute("SELECT MaNguoiDung, TenNguoiDung, VaiTro, TrangThai, TenDangNhap FROM nguoidung WHERE MaNguoiDung = %s", (user_id,))
+            updated_user = self.cur.fetchone()
+
+            return jsonify({
+                "status": "success",
+                "message": "Cập nhật người dùng thành công!",
+                "user": updated_user
+            }), 200
 
         except mysql.connector.Error as err:
             self.con.rollback()
-            return json.dumps({"status": "error", "message": f"Lỗi cơ sở dữ liệu: {str(err)}"}, ensure_ascii=False), 500
+            return jsonify({"status": "error", "message": f"Lỗi database: {str(err)}"}), 500
 
         except Exception as e:
-            return json.dumps({"status": "error", "message": f"Lỗi không xác định: {str(e)}"}, ensure_ascii=False), 400
+            return jsonify({"status": "error", "message": f"Lỗi không xác định: {str(e)}"}), 400
 
         finally:
-            self.cur.close()  # Đóng cursor
+            self.cur.close()
+
 
     @token_required 
     def user_delete_model(self, id):

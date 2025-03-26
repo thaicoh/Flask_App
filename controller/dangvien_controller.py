@@ -1,3 +1,4 @@
+import json
 from app import app
 from model.dangvien_model import dangvien_model
 from flask import request
@@ -42,3 +43,19 @@ def dangvien_getall_ngoaidangbo_controller():
 @app.route("/dangvien/timKiem/ngoaidangbo", methods=["POST"])
 def dangvien_timkiem_ngoaidangbo_controller():
     return object.dangvien_timkiem_ngoaidangbo_model(request)
+
+@app.route("/dangvien/xoaTheoNgay", methods=["DELETE"])
+def dangvien_xoaTheoNgay_controller():
+    try:
+        # Lấy dữ liệu từ request body (JSON)
+        data = request.get_json()
+        ngay_xoa = data.get("ngayXoa")  # Dữ liệu phải có dạng {"ngayXoa": "yyyy-MM-dd"}
+
+        if not ngay_xoa:
+            return json.dumps({"status": "error", "message": "Thiếu ngày xóa!"}, ensure_ascii=False), 400
+
+        # Gọi model để xử lý
+        return object.dangvien_delete_by_date(ngay_xoa)
+
+    except Exception as e:
+        return json.dumps({"status": "error", "message": f"Lỗi không xác định: {str(e)}"}, ensure_ascii=False), 500

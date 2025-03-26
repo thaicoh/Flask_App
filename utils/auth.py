@@ -7,6 +7,7 @@ from functools import wraps
 # Lấy SECRET_KEY từ biến môi trường hoặc đặt mặc định
 SECRET_KEY = os.getenv("SECRET_KEY", "your_secret_key")
 
+print("SECRET_KEY: " , SECRET_KEY)
 def generate_token(user_id, ten_dang_nhap, vai_tro):
     payload = {
         "MaNguoiDung": user_id,  # Thêm MaNguoiDung vào token

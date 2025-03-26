@@ -12,6 +12,7 @@ class Database:
                 user=os.getenv("DB_USER", "root"),
                 password=os.getenv("DB_PASS", ""),
                 database=os.getenv("DB_NAME", "quanlydangvien"),
+                port=3306,
                 autocommit=True,
                 connect_timeout=28800  # Thời gian chờ kết nối (giây)
             )
